@@ -1,0 +1,19 @@
+{
+	"name": "worlds-collide",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Worlds Collide - Roblox game (roblox-ts)",
+	"scripts": {
+		"build": "rbxtsc",
+		"watch": "rbxtsc -w"
+	},
+	"devDependencies": {
+		"@rbxts/compiler-types": "^3.0.0-types.0",
+		"@rbxts/types": "^1.0.957",
+		"roblox-ts": "^3.0.0",
+		"typescript": "^5.5.3"
+	},
+	"dependencies": {
+		"@rbxts/services": "^1.6.0"
+	}
+}
