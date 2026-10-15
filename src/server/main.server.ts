@@ -12,6 +12,7 @@ import { loadContent } from "shared/contentLoader";
 import * as AbilityService from "./abilities/abilityService";
 import * as ServerAPI from "./api";
 import * as CombatService from "./combat/combatService";
+import * as Network from "./network/remoteHandler";
 import * as Verity from "./npc/verity";
 import * as Stands from "./powers/stands";
 import * as Projectiles from "./projectiles/projectileService";
@@ -28,6 +29,7 @@ if (Config.RunTestsInStudio && RunService.IsStudio()) {
 
 // Handlers first, then players: PlayerService.start() registers everyone
 // already in the server, and their first requests must have somewhere to go.
+Network.start();
 CombatService.start();
 AbilityService.start();
 Projectiles.start();

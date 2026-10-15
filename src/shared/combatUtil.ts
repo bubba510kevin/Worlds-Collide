@@ -1,8 +1,7 @@
 /*
 	combatUtil.ts  (shared)
 
-	Small helpers used by both sides. Push() drives dashes, punch lunges and
-	knockback.
+	Small helpers used by both sides. Push() drives dashes and knockback.
 */
 
 import { RunService } from "@rbxts/services";

@@ -20,8 +20,6 @@ export class sword extends weapon {
 
 	protected forge_st: ForgeStats;
 	protected inscription: string;
-	// Energy granted by the forge parts. Nothing spends it yet.
-	protected energy = 0;
 
 	// The sword's stats before forge parts; CalculateStats adds the parts on top.
 	private readonly base_stats: generic_weapon_stats;
@@ -76,7 +74,6 @@ export class sword extends weapon {
 		let cc = this.base_stats.cc;
 		let cd = this.base_stats.cd;
 		let durability = 0;
-		let energy = 0;
 		let capacity = 0;
 		const abilities: AbilityId[] = [];
 
@@ -87,7 +84,6 @@ export class sword extends weapon {
 			cc += p.critChance;
 			cd += p.critDamage;
 			durability += p.durability;
-			energy += p.energy;
 			capacity += p.capacity;
 			for (const a of p.abilities) abilities.push(a);
 		}
@@ -101,7 +97,7 @@ export class sword extends weapon {
 		};
 		this._item_stats.capacity = capacity;
 		this._item_stats.abilities = abilities;
-		this.energy = energy;
+		this.abilityVersion += 1;
 
 		// Keep the same wear fraction when parts change, so re-forging is not a
 		// free repair.
@@ -112,10 +108,6 @@ export class sword extends weapon {
 		} else {
 			this.durability = durability * math.clamp(this.durability / previousMax, 0, 1);
 		}
-	}
-
-	public GetEnergy(): number {
-		return this.energy;
 	}
 
 	public ToSnapshot(): ItemSnapshot {

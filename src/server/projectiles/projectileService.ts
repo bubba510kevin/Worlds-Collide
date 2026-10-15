@@ -49,19 +49,23 @@ function serverTime() {
 	return Workspace.GetServerTimeNow();
 }
 
+/*
+	Message argument lists, shared by the broadcast and the late-joiner replay.
+	Nothing before the last argument may be nil: a nil in the middle of a Luau
+	argument list cuts the rest off when it is spread, hence `?? false`.
+*/
+function spawnArgs(p: Projectile): unknown[] {
+	const owner = p.owner.GetCharacter() ?? false;
+	return ["spawn", p.id, p.opts.visual ?? "default", serverTime(), p.position, p.velocity, p.gravity, p.radius, owner, p.opts.visualData];
+}
+
+function beamArgs(b: Beam): unknown[] {
+	const owner = b.owner.GetCharacter() ?? false;
+	return ["beam", b.id, b.opts.visual ?? "default", b.origin, b.direction, b.reach, b.opts.width, owner, b.opts.visualData];
+}
+
 function sendSpawn(p: Projectile) {
-	remote.FireAllClients(
-		"spawn",
-		p.id,
-		p.opts.visual ?? "default",
-		serverTime(),
-		p.position,
-		p.velocity,
-		p.gravity,
-		p.radius,
-		p.owner.GetCharacter(),
-		p.opts.visualData,
-	);
+	remote.FireAllClients(...spawnArgs(p));
 	p.lastSyncAt = os.clock();
 }
 
@@ -72,17 +76,7 @@ function sendSync(p: Projectile) {
 }
 
 function sendBeam(b: Beam) {
-	remote.FireAllClients(
-		"beam",
-		b.id,
-		b.opts.visual ?? "default",
-		b.origin,
-		b.direction,
-		b.reach,
-		b.opts.width,
-		b.owner.GetCharacter(),
-		b.opts.visualData,
-	);
+	remote.FireAllClients(...beamArgs(b));
 	b.needsSync = false;
 	b.lastSyncAt = os.clock();
 }
@@ -94,12 +88,12 @@ function sendBeamUpdate(b: Beam) {
 }
 
 const projectileHost: ProjectileHost = {
-	strike: (attacker, victim, opts) => strike(attacker, victim, opts),
+	strike,
 	replicateEnd: (p: Projectile, reason: ProjectileEndReason) => remote.FireAllClients("end", p.id, p.position, reason),
 };
 
 const beamHost: BeamHost = {
-	strike: (attacker, victim, opts) => strike(attacker, victim, opts),
+	strike,
 	replicateEnd: (b: Beam, reason: BeamEndReason) => remote.FireAllClients("beamEnd", b.id, reason),
 };
 
@@ -136,9 +130,11 @@ export function fireBeam(owner: Generic_Player, opts: BeamOptions): Beam {
 }
 
 // End everything one owner has in flight (they left, died, got sealed...).
-export function clearOwner(owner: Generic_Player) {
-	for (const p of getProjectiles(owner)) p.End("cancelled");
-	for (const b of getBeams(owner)) b.End("cancelled");
+// Takes the Player too, because on leaving their Generic_Player may already be gone.
+export function clearOwner(owner: Generic_Player | Player) {
+	const owns = (gp: Generic_Player) => gp === owner || gp.GetInstance() === owner;
+	for (const p of projectiles) if (p.alive && owns(p.owner)) p.End("cancelled");
+	for (const b of beams) if (b.alive && owns(b.owner)) b.End("cancelled");
 }
 
 // ----------------------------------------------------------------------------
@@ -285,41 +281,11 @@ export function start() {
 	});
 
 	// Shots outlive their owner only while the owner is in the game.
-	Players.PlayerRemoving.Connect((player) => {
-		for (const p of projectiles) if (p.owner.GetInstance() === player) p.End("cancelled");
-		for (const b of beams) if (b.owner.GetInstance() === player) b.End("cancelled");
-	});
+	Players.PlayerRemoving.Connect(clearOwner);
 
 	// Late joiners need everything already in flight.
 	Players.PlayerAdded.Connect((player) => {
-		for (const p of getProjectiles()) {
-			remote.FireClient(
-				player,
-				"spawn",
-				p.id,
-				p.opts.visual ?? "default",
-				serverTime(),
-				p.position,
-				p.velocity,
-				p.gravity,
-				p.radius,
-				p.owner.GetCharacter(),
-				p.opts.visualData,
-			);
-		}
-		for (const b of getBeams()) {
-			remote.FireClient(
-				player,
-				"beam",
-				b.id,
-				b.opts.visual ?? "default",
-				b.origin,
-				b.direction,
-				b.reach,
-				b.opts.width,
-				b.owner.GetCharacter(),
-				b.opts.visualData,
-			);
-		}
+		for (const p of getProjectiles()) remote.FireClient(player, ...spawnArgs(p));
+		for (const b of getBeams()) remote.FireClient(player, ...beamArgs(b));
 	});
 }

@@ -9,7 +9,7 @@
 */
 
 import { Players, RunService, UserInputService } from "@rbxts/services";
-import { CombatConfig, getComboAttack } from "shared/combatConfig";
+import { attackCooldown, CombatConfig, getComboAttack } from "shared/combatConfig";
 import { Push } from "shared/combatUtil";
 import { getRemote } from "shared/remotes";
 import { heldWeaponStats } from "../state";
@@ -79,12 +79,6 @@ function playSound(soundId: string, parent: Instance | undefined, volume = 1, pl
 	sound.Ended.Connect(() => sound.Destroy());
 }
 
-// Mirrors the server: the held weapon's attack_speed scales recovery.
-function predictedCooldown(baseCooldown: number) {
-	const speed = heldWeaponStats()?.attack_speed ?? 1;
-	return baseCooldown / math.max(speed, 0.1);
-}
-
 function tryM1(): boolean {
 	if (!canAct() || holdingTool() || blocking) return false;
 
@@ -97,7 +91,7 @@ function tryM1(): boolean {
 	const attack = getComboAttack(index);
 	if (!attack) return false;
 
-	state.nextM1 = now + predictedCooldown(attack.Cooldown);
+	state.nextM1 = now + attackCooldown(attack, heldWeaponStats()?.attack_speed);
 	state.comboExpires = state.nextM1 + CombatConfig.M1.ComboWindow;
 
 	inputRemote.FireServer("M1");

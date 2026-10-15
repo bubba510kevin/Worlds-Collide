@@ -22,7 +22,7 @@ import { AbilityDef } from "shared/abilities/types";
 import { GetHumanoidAndRoot } from "shared/combatUtil";
 import { isHoldingTool } from "../combat/combatService";
 import { Generic_Player } from "../generic_player/generic_player";
-import { onRemote, push, reject } from "../network/remoteHandler";
+import { onRemote, reject } from "../network/remoteHandler";
 import { activePlayers } from "../players";
 import { ability, AbilityContext, ActiveContext, CharacterContext, DataAbility, EndReason } from "./ability";
 import { ActiveAbility } from "./abilityHolder";
@@ -60,7 +60,7 @@ function behaviourOf(def: AbilityDef): ability {
 }
 
 // ability ids (and their sources) each player had at the last sync
-const granted = new Map<Generic_Player, Map<string, string>>();
+const granted = new Map<Generic_Player, ReadonlyMap<string, string>>();
 
 // The context built at activation, so every hook of one activation sees the same object.
 const activeContexts = new WeakMap<ActiveAbility, ActiveContext>();
@@ -232,17 +232,19 @@ function onRevoked(gp: Generic_Player, id: string, source: string) {
 
 function syncGrants(gp: Generic_Player) {
 	const now = gp.abilities.GetAll();
-	const before = granted.get(gp) ?? new Map<string, string>();
+	const before = granted.get(gp);
+	// GetAll returns the same cached map until something changes.
+	if (now === before) return;
 	let changed = false;
 
-	for (const [id, source] of before) {
+	for (const [id, source] of before ?? new Map<string, string>()) {
 		if (!now.has(id)) {
 			onRevoked(gp, id, source);
 			changed = true;
 		}
 	}
 	for (const [id, source] of now) {
-		if (!before.has(id)) {
+		if (!before?.has(id)) {
 			onGranted(gp, id, source);
 			changed = true;
 		} else if (before.get(id) !== source) {
@@ -255,6 +257,7 @@ function syncGrants(gp: Generic_Player) {
 }
 
 function tickActives(gp: Generic_Player, dt: number) {
+	if (!gp.abilities.HasActives()) return;
 	const character = gp.GetCharacter();
 	const [humanoid] = GetHumanoidAndRoot(character);
 	const now = os.clock();
@@ -308,7 +311,6 @@ export function start() {
 			syncGrants(gp);
 			tickActives(gp, dt);
 			if (gp.StatsOutOfDate()) gp.OnStatsChanged();
-			if (gp.dirty) push(gp);
 		}
 	});
 

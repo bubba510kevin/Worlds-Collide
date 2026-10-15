@@ -31,8 +31,14 @@ export class StatModifiers<K extends string> {
 	// Bumped on every change, so callers can cheaply notice "something changed".
 	public version = 0;
 
+	// Per-stat totals, rebuilt only when the version moves or a timed one expires.
+	private totals = new Map<K, { flat: number; mult: number }>();
+	private totalsVersion = -1;
+	private nextExpiry = math.huge;
+
 	public Add(mod: StatModifier<K>) {
 		this.mods.set(keyOf(mod.source, mod.id), mod);
+		if (mod.until !== undefined) this.nextExpiry = math.min(this.nextExpiry, mod.until);
 		this.version += 1;
 	}
 
@@ -72,15 +78,8 @@ export class StatModifiers<K extends string> {
 	}
 
 	public Apply(stat: K, base: number): number {
-		this.prune();
-		let flat = 0;
-		let mult = 1;
-		for (const [, mod] of this.mods) {
-			if (mod.stat !== stat) continue;
-			flat += mod.flat ?? 0;
-			mult *= mod.mult ?? 1;
-		}
-		return (base + flat) * mult;
+		const total = this.getTotals().get(stat);
+		return total ? (base + total.flat) * total.mult : base;
 	}
 
 	public ApplyAll<T extends Record<K, number>>(base: T): T {
@@ -93,11 +92,33 @@ export class StatModifiers<K extends string> {
 
 	private prune() {
 		const now = os.clock();
+		if (now < this.nextExpiry) return;
+		this.nextExpiry = math.huge;
 		for (const [key, mod] of this.mods) {
-			if (mod.until !== undefined && mod.until <= now) {
+			if (mod.until === undefined) continue;
+			if (mod.until <= now) {
 				this.mods.delete(key);
 				this.version += 1;
+			} else {
+				this.nextExpiry = math.min(this.nextExpiry, mod.until);
 			}
 		}
+	}
+
+	// One pass over every modifier, summed per stat; reused until something changes.
+	private getTotals(): Map<K, { flat: number; mult: number }> {
+		this.prune();
+		if (this.totalsVersion === this.version) return this.totals;
+
+		const totals = new Map<K, { flat: number; mult: number }>();
+		for (const [, mod] of this.mods) {
+			const t = totals.get(mod.stat) ?? { flat: 0, mult: 1 };
+			t.flat += mod.flat ?? 0;
+			t.mult *= mod.mult ?? 1;
+			totals.set(mod.stat, t);
+		}
+		this.totals = totals;
+		this.totalsVersion = this.version;
+		return totals;
 	}
 }

@@ -13,12 +13,11 @@
 
 import { Workspace } from "@rbxts/services";
 import { Config } from "shared/config";
-import { GetCharacterFromPart } from "shared/combatUtil";
+import { GetCharacterFromPart, GetHumanoidAndRoot } from "shared/combatUtil";
 import { generic_weapon_stats } from "shared/types";
 import type { Generic_Player } from "../generic_player/generic_player";
 
 export type HitData = {
-	damage: number; // the attack's base damage
 	hitbox_x: number; // width
 	hitbox_y: number; // height
 	hitbox_z: number; // reach in front of the attacker
@@ -51,11 +50,11 @@ export interface HitBox {
 
 export function calc_hit(attacker: Generic_Player, hitda: HitData): HitBox {
 	const character = attacker.GetCharacter();
-	const root = character?.FindFirstChild("HumanoidRootPart");
+	const [, root] = GetHumanoidAndRoot(character);
 	const targets: Model[] = [];
 	const boxSize = new Vector3(hitda.hitbox_x, hitda.hitbox_y, hitda.hitbox_z);
 
-	if (!character || !root || !root.IsA("BasePart")) {
+	if (!character || !root) {
 		return { targets, boxCFrame: CFrame.identity, boxSize };
 	}
 

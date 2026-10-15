@@ -30,6 +30,8 @@ export class item {
 		their parts, so recomputing stats never strips a bound ability.
 	*/
 	private readonly bound = new Set<AbilityId>();
+	// Bumped whenever GetAbilities() changes, so ability holders know to re-read it.
+	public abilityVersion = 0;
 
 	constructor(_in_stats: generic_item_stats) {
 		this._item_stats = _in_stats;
@@ -57,11 +59,14 @@ export class item {
 	public BindAbility(id: AbilityId): boolean {
 		if (!isBindable(id, "item") || this.bound.has(id)) return false;
 		this.bound.add(id);
+		this.abilityVersion += 1;
 		return true;
 	}
 
 	public UnbindAbility(id: AbilityId): boolean {
-		return this.bound.delete(id);
+		if (!this.bound.delete(id)) return false;
+		this.abilityVersion += 1;
+		return true;
 	}
 
 	public HasBoundAbility(id: AbilityId): boolean {

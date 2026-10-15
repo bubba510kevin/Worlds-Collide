@@ -15,14 +15,15 @@
 */
 
 import { Debris, Players, RunService, Workspace } from "@rbxts/services";
-import { ComboAttack, CombatConfig, getComboAttack } from "shared/combatConfig";
+import { attackCooldown, ComboAttack, CombatConfig, getComboAttack } from "shared/combatConfig";
 import { GetCharacterFromPart, GetHumanoidAndRoot, Push } from "shared/combatUtil";
+import { effectPart } from "shared/effects";
 import { getRemote } from "shared/remotes";
 import { Generic_Player } from "../generic_player/generic_player";
 import { DamageInfo, GameEvents } from "../abilities/events";
 import type { weapon } from "../item/weapon/weapon";
-import { onRemote, push } from "../network/remoteHandler";
-import { getGenericPlayer, getGenericPlayerFromCharacter } from "../players";
+import { onRemote } from "../network/remoteHandler";
+import { getGenericPlayerFromCharacter } from "../players";
 import { calc_damage, calc_hit, deal_damage, HitData } from "./CalcHit";
 
 const effectRemote = getRemote("CombatEffect");
@@ -106,15 +107,11 @@ function restoreNormalMovement(humanoid: Humanoid) {
 	humanoid.SetStateEnabled(Enum.HumanoidStateType.Jumping, true);
 }
 
-interface MovementLock {
-	untilTime: number;
-}
-
-const movementLocks = new WeakMap<Humanoid, MovementLock>();
+// humanoid -> os.clock() its movement lock ends
+const movementLocks = new WeakMap<Humanoid, number>();
 
 function isMovementLocked(humanoid: Humanoid): boolean {
-	const lock = movementLocks.get(humanoid);
-	return lock !== undefined && lock.untilTime > os.clock();
+	return (movementLocks.get(humanoid) ?? 0) > os.clock();
 }
 
 /*
@@ -127,20 +124,15 @@ function lockMovement(humanoid: Humanoid, speed: number, duration: number) {
 	if (humanoid.Health <= 0) return;
 	if (!normalMovement.has(humanoid)) saveNormalMovement(humanoid);
 
-	let lock = movementLocks.get(humanoid);
-	if (!lock) {
-		lock = { untilTime: 0 };
-		movementLocks.set(humanoid, lock);
-	}
-	lock.untilTime = math.max(lock.untilTime, os.clock() + duration);
+	const expected = math.max(movementLocks.get(humanoid) ?? 0, os.clock() + duration);
+	movementLocks.set(humanoid, expected);
 
 	setLockedMovement(humanoid, speed, false);
 	humanoid.Parent?.SetAttribute("MovementLocked", true);
 
-	const expected = lock.untilTime;
-	const thisLock = lock;
 	task.delay(math.max(0, expected - os.clock()), () => {
-		if (movementLocks.get(humanoid) !== thisLock || thisLock.untilTime !== expected) return;
+		// A later lock extended it; that one's timer releases it.
+		if (movementLocks.get(humanoid) !== expected) return;
 		movementLocks.delete(humanoid);
 
 		const character = humanoid.Parent;
@@ -218,12 +210,7 @@ function hasLineOfSight(attackerRoot: BasePart, victimRoot: BasePart, attackerCh
 }
 
 function showHitbox(boxCFrame: CFrame, boxSize: Vector3) {
-	const part = new Instance("Part");
-	part.Anchored = true;
-	part.CanCollide = false;
-	part.CanQuery = false;
-	part.CanTouch = false;
-	part.Material = Enum.Material.Neon;
+	const part = effectPart();
 	part.Color = Color3.fromRGB(255, 60, 60);
 	part.Transparency = 0.7;
 	part.Size = boxSize;
@@ -325,6 +312,8 @@ export interface StrikeOptions {
 		lets a hit land after the attacker has died or moved away.
 	*/
 	fromPosition?: Vector3;
+	// Can't be blocked (grabs, throws).
+	ignoreBlock?: boolean;
 }
 
 export interface StrikeResult {
@@ -332,6 +321,31 @@ export interface StrikeResult {
 	crit: boolean;
 	blocked: boolean; // fully blocked: no damage, no stun
 	victimRoot: BasePart;
+}
+
+// Whether `victim` can be hit at all right now: alive, not invulnerable, PvP rules.
+export function canBeHit(victim: Model): boolean {
+	const [humanoid, root] = GetHumanoidAndRoot(victim);
+	if (!humanoid || !root || victim.GetAttribute("IFrames") === true) return false;
+	return CombatConfig.PvP || Players.GetPlayerFromCharacter(victim) === undefined;
+}
+
+/*
+	Stun a character for `seconds`: the Stunned attribute, a movement lock,
+	and for players a dropped combo and block. The block is dropped before the
+	lock so its walk speed can't override the stun.
+*/
+export function applyStun(character: Model, seconds: number) {
+	if (seconds <= 0) return;
+	const player = Players.GetPlayerFromCharacter(character);
+	if (player) {
+		const state = getState(player);
+		resetCombo(state);
+		if (state.blocking) stopBlocking(player);
+	}
+	setTimedAttribute(character, "Stunned", seconds);
+	const humanoid = character.FindFirstChildOfClass("Humanoid");
+	if (humanoid) lockMovement(humanoid, CombatConfig.HitWalkSpeed, seconds);
 }
 
 /*
@@ -354,23 +368,20 @@ export function strike(attacker: Generic_Player, victim: Model, opts: StrikeOpti
 	const from = opts.fromPosition ?? attackerRoot?.Position;
 	if (!from) return undefined;
 
-	const victimHumanoid = victim.FindFirstChildOfClass("Humanoid");
-	const victimRoot = victim.FindFirstChild("HumanoidRootPart");
-	if (!victimHumanoid || !victimRoot || !victimRoot.IsA("BasePart") || victimHumanoid.Health <= 0) return undefined;
-	if (victim.GetAttribute("IFrames") === true) return undefined;
-
-	const victimPlayer = Players.GetPlayerFromCharacter(victim);
-	if (victimPlayer && !CombatConfig.PvP) return undefined;
+	if (!canBeHit(victim)) return undefined;
+	const [victimHumanoid, victimRoot] = GetHumanoidAndRoot(victim);
+	if (!victimHumanoid || !victimRoot) return undefined;
 
 	if (opts.wallCheck ?? CombatConfig.WallCheck) {
 		if (!attackerChar || !attackerRoot || !hasLineOfSight(attackerRoot, victimRoot, attackerChar, victim)) return undefined;
 	}
 
 	const attackerPlayer = attacker.GetInstance();
-	const victimGp = victimPlayer ? getGenericPlayer(victimPlayer) : undefined;
+	const victimPlayer = Players.GetPlayerFromCharacter(victim);
+	const victimGp = getGenericPlayerFromCharacter(victim);
 	const tags = opts.tags ?? [];
 
-	const blocked = blockedFraction(from, victimRoot, victim);
+	const blocked = opts.ignoreBlock ? 0 : blockedFraction(from, victimRoot, victim);
 	if (blocked >= 1) {
 		if (victimPlayer) effectRemote.FireClient(victimPlayer, "BlockHit", attackerChar, victimRoot.Position);
 		effectRemote.FireClient(attackerPlayer, "Blocked", victim, victimRoot.Position);
@@ -401,16 +412,7 @@ export function strike(attacker: Generic_Player, victim: Model, opts: StrikeOpti
 
 	// A partially blocked hit still hurts, but does not stun or knock back.
 	if (blocked <= 0) {
-		if (opts.stun > 0) {
-			setTimedAttribute(victim, "Stunned", opts.stun);
-			lockMovement(victimHumanoid, CombatConfig.HitWalkSpeed, opts.stun);
-
-			if (victimPlayer) {
-				const victimState = getState(victimPlayer);
-				resetCombo(victimState);
-				if (victimState.blocking) stopBlocking(victimPlayer);
-			}
-		}
+		applyStun(victim, opts.stun);
 
 		const kb = opts.knockback;
 		if (kb && kb.distance > 0) {
@@ -469,11 +471,10 @@ function runSwing(attacker: Generic_Player, character: Model, humanoid: Humanoid
 			break;
 		}
 
-		const root = character.FindFirstChild("HumanoidRootPart");
-		if (!root || !root.IsA("BasePart")) break;
+		const [, root] = GetHumanoidAndRoot(character);
+		if (!root) break;
 
 		const hitda: HitData = {
-			damage: attack.Damage,
 			hitbox_x: attack.Width,
 			hitbox_y: attack.Height,
 			hitbox_z: attack.Range,
@@ -491,15 +492,6 @@ function runSwing(attacker: Generic_Player, character: Model, humanoid: Humanoid
 
 		RunService.Heartbeat.Wait();
 	} while (os.clock() < endTime);
-
-	// Weapon wear changed the attacker's inventory; send it once per swing.
-	if (attacker.dirty) push(attacker);
-}
-
-// The held weapon's attack_speed shortens (or lengthens) every attack's recovery.
-export function attackCooldown(attacker: Generic_Player, attack: ComboAttack): number {
-	const speed = attacker.HeldWeapon()?.GetWeaponStats().attack_speed ?? 1;
-	return attack.Cooldown / math.max(speed, 0.1);
 }
 
 function handleM1(attacker: Generic_Player) {
@@ -525,7 +517,7 @@ function handleM1(attacker: Generic_Player) {
 	state.swingId += 1;
 	const swingId = state.swingId;
 
-	const cooldown = attackCooldown(attacker, attack);
+	const cooldown = attackCooldown(attack, attacker.HeldWeapon()?.GetWeaponStats().attack_speed);
 	state.nextM1 = math.max(now, state.nextM1) + cooldown;
 	state.comboExpires = state.nextM1 + CombatConfig.M1.ComboWindow;
 

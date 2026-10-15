@@ -9,6 +9,7 @@
 */
 
 import { Debris, RunService, TweenService, Workspace } from "@rbxts/services";
+import { GetCharacterFromPart, GetHumanoidAndRoot } from "shared/combatUtil";
 import { startPose } from "../../movement/rigPose";
 import * as Sprint from "../../movement/sprint";
 import { ClientAbility } from "../clientAbility";
@@ -19,7 +20,6 @@ const AFTERIMAGE_INTERVAL = 0.2;
 const FADE_TIME = 0.5;
 const GHOST_START_TRANSPARENCY = 0.35;
 const FOV_BOOST = 12;
-const HIDE_CHARACTER = true;
 
 const GHOST_COLOR = Color3.fromRGB(0, 0, 0);
 const OUTLINE_COLOR = Color3.fromRGB(255, 255, 255);
@@ -95,9 +95,8 @@ function createAfterimage(saved: Saved) {
 
 function findTarget(root: BasePart, params: OverlapParams): Model | undefined {
 	for (const part of Workspace.GetPartBoundsInRadius(root.Position, HIT_RANGE, params)) {
-		const model = part.FindFirstAncestorOfClass("Model");
-		const hum = model?.FindFirstChildOfClass("Humanoid");
-		if (model && hum && hum.Health > 0 && model.FindFirstChild("HumanoidRootPart")) return model;
+		const model = GetCharacterFromPart(part);
+		if (model && GetHumanoidAndRoot(model)[0]) return model;
 	}
 	return undefined;
 }
@@ -126,7 +125,7 @@ export const FlashStep: ClientAbility = {
 		RunService.Heartbeat.Wait();
 
 		createAfterimage(saved);
-		if (HIDE_CHARACTER) setInvisible(saved);
+		setInvisible(saved);
 
 		const startTime = os.clock();
 		let lastGhost = 0;
@@ -140,7 +139,7 @@ export const FlashStep: ClientAbility = {
 			}
 
 			humanoid.WalkSpeed = FLASH_SPEED;
-			if (HIDE_CHARACTER) setInvisible(saved);
+			setInvisible(saved);
 
 			const target = findTarget(root, params);
 			if (target) {

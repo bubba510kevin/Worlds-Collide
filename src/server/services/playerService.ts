@@ -15,7 +15,7 @@ import { Generic_Player } from "../generic_player/generic_player";
 import { isValidHotbarSlot } from "../inventory/inventory";
 import { new_item_stats } from "../item/item";
 import { sword } from "../item/weapon/sword";
-import { onRemote, push, reject } from "../network/remoteHandler";
+import { onRemote, reject } from "../network/remoteHandler";
 import { activePlayers } from "../players";
 
 function giveStarterKit(gp: Generic_Player) {
@@ -24,7 +24,8 @@ function giveStarterKit(gp: Generic_Player) {
 	if (inv.AddItem(starter)) {
 		inv.SetHotbar(1, starter.uid);
 		gp.SetHolding(1);
-	}}
+	}
+}
 
 function onPlayerAdded(player: Player) {
 	if (activePlayers.has(player)) return;
@@ -40,7 +41,7 @@ function onPlayerAdded(player: Player) {
 
 	for (const id of getDefaultAbilities()) gp.abilities.Grant(id, "innate");
 	giveStarterKit(gp);
-	push(gp);
+	gp.MarkDirty();
 }
 
 function onPlayerRemoving(player: Player) {
@@ -57,7 +58,6 @@ function registerHandlers() {
 	onRemote("RequestEquip", (gp, slot) => {
 		if (!typeIs(slot, "number")) return reject(gp, "RequestEquip", "slot is not a number");
 		if (!gp.SetHolding(slot)) return reject(gp, "RequestEquip", `invalid slot ${slot}`);
-		gp.MarkDirty();
 	});
 
 	// RequestSetHotbar(slot, uid?) - an undefined uid clears the slot.
@@ -105,11 +105,11 @@ export function start() {
 	Players.PlayerRemoving.Connect(onPlayerRemoving);
 	for (const player of Players.GetPlayers()) onPlayerAdded(player);
 
-	// Safety net only: handlers push immediately. This catches a missed update.
+	// Safety net: resend everyone's state now and then, in case a client missed one.
 	task.spawn(() => {
 		for (;;) {
 			task.wait(Config.SnapshotInterval);
-			for (const [, gp] of activePlayers) push(gp);
+			for (const [, gp] of activePlayers) gp.MarkDirty();
 		}
 	});
 }

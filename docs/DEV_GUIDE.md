@@ -17,7 +17,8 @@ Concretely, that means:
 
 * The client sends **intent** ("pressed V", "aiming here", "equip slot 3"). **Never** results ("did 50 damage", "I have a sword").
 * **Every** value from a client is `unknown` until you've checked it with `typeIs`.
-* Every client request goes through `onRemote()` (`src/server/network/remoteHandler.ts`). It rate-limits, catches errors, and pushes a fresh snapshot.
+* Every client request goes through `onRemote()` (`src/server/network/remoteHandler.ts`). It rate-limits and catches errors.
+* State changes call `gp.MarkDirty()`. Once per frame, `remoteHandler.start()` sends each dirty player **one** snapshot. Never send `StateChanged` yourself.
 * The server tells clients what happened with **snapshots** (`StateChanged`) and **effects** (`CombatEffect`, `Projectile`). Clients only draw.
 
 If you write code that trusts a client value without checking it, you've written a cheat.
@@ -164,7 +165,7 @@ Follow this once and the codebase makes sense.
 5. **Server.** `onInput` checks the id is real (otherwise `reject` = a violation), checks the player has it, and routes by input mode and active state.
 6. **Server.** `activate()`: blockedBy, Tool and weapon checks → `CanUse` (charge) → `CanAfford` → `CanActivate` → `StartActive` → `OnActivate`.
 7. **Server.** If `OnActivate` didn't return `false`: spend resources, consume a charge, fire `GameEvents.AbilityActivated`. Instant abilities end right here.
-8. **Server.** Every Heartbeat: `syncGrants`, `tickActives` (death, interrupt, expiry, `OnTick`), stats, and `push(gp)` if dirty.
+8. **Server.** Every Heartbeat: `syncGrants` (skipped when nothing changed), `tickActives` (death, interrupt, expiry, `OnTick`), and stats. Then the network flush sends a snapshot to every dirty player.
 9. **Client.** `StateChanged` → `state.ts` → `abilityState` resets predictions → the bar redraws.
 
 Damage anywhere in that chain goes through **`strike()`** (`combatService.ts`), never `TakeDamage`.
@@ -180,7 +181,7 @@ For each: what it is, where it lives, and the **rules you must not break**.
 One per player, in `activePlayers`. It holds stats, `modifiers`, `resources`, `abilities` (an AbilityHolder), the inventory, the held slot, and the network bookkeeping.
 
 * **Read stats with `GetStat`.** It applies modifiers. `GetGenericPlayerStats` is the raw base.
-* Changed something a client should see? `gp.MarkDirty()`. The ability service pushes dirty players every frame.
+* Changed something a client should see? `gp.MarkDirty()`. The network flush sends one snapshot per dirty player per frame.
 * Max health and speed go onto the Humanoid in `ApplyStatsToCharacter`. It **won't touch WalkSpeed** while `MovementLocked` or `Blocking` (combat owns it then).
 
 ### 5.2 strike() (`server/combat/combatService.ts`)
@@ -188,6 +189,8 @@ One per player, in `activePlayers`. It holds stats, `modifiers`, `resources`, `a
 The only way damage happens. The order is: checks → wall → block (direction from `fromPosition`, or the attacker) → `calc_damage` → attacker `outgoingDamage` hooks → victim `incomingDamage` hooks → damage, wear, stun, knockback → `GameEvents.Hit` / `Damaged`.
 
 * It works even if the attacker has died, as long as `fromPosition` is given (projectiles rely on this).
+* `ignoreBlock: true` is for grabs and throws.
+* Helpers next to it: `canBeHit(victim)` ("could anything hit them right now?") and `applyStun(character, seconds)`. Stun is **always** `applyStun`: it sets the attribute, locks movement, and drops the victim's combo and block in the right order.
 * Adding a new rule that should apply to every hit? It goes **here**.
 
 ### 5.3 Registry (`shared/abilities/registry.ts`)
@@ -204,7 +207,7 @@ The live list of abilities, kits and resources. It starts from `catalog.ts`; Lua
 |---|---|
 | `ability.ts` | the base class: hooks (all optional) + helpers (`strike`, `fireProjectile`, `listen`, `addDamageHook`, `broadcast`...) |
 | `scriptedAbility.ts` | an `ability` whose hooks come from a Luau table |
-| `abilityHolder.ts` | grants (by source, optionally timed), kits (one per group), charges, active instances. **No Instances, no networking**, so it's unit-testable. |
+| `abilityHolder.ts` | grants (by source, optionally timed), kits (one per group), charges, active instances. **No Instances, no networking**, so it's unit-testable. `GetAll()` is cached: it returns the same map until grants, the held item (`item.abilityVersion`) or a timed grant change. **If you change what an item's `GetAbilities()` returns, bump its `abilityVersion`.** |
 | `abilityService.ts` | input routing, activation order, grant diffing (`OnGranted`/`OnRevoked`, `def.modifiers`), ticking, ending, `registerBehaviour` |
 
 Rules:
@@ -218,7 +221,7 @@ Rules:
 ### 5.5 Resources and modifiers
 
 * `Resources`: pools from the registry. `Spend` is **all-or-nothing**. New pools appear lazily if a resource is registered later.
-* `StatModifiers<K>`: `(base + Σflat) × Πmult`, keyed by `source/id` (same key = replace). `version` bumps on change; the service calls `OnStatsChanged` when it moves.
+* `StatModifiers<K>`: `(base + Σflat) × Πmult`, keyed by `source/id` (same key = replace). Per-stat totals are cached and rebuilt only when `version` moves or a timed modifier expires. `version` bumps on change; the service calls `OnStatsChanged` when it moves.
 
 ### 5.6 Projectiles (`server/projectiles/`)
 
@@ -304,7 +307,7 @@ export class MyThing extends ability {
 ### 6.6 Add a stat
 
 1. Add it to `Generic_Player_stats` (`shared/types.ts`) and `DefaultPlayerStats` (`config.ts`).
-2. Add it to `STATS` in `registry.ts` and to `GetEffectiveStats` in `generic_player.ts`.
+2. Add it to `GetEffectiveStats` in `generic_player.ts`. (The registry's stat list, `STAT_NAMES`, is built from `DefaultPlayerStats` automatically.)
 3. Use it somewhere (`calc_damage`, `ApplyStatsToCharacter`...).
 4. Update the stat lists in USE_GUIDE.
 

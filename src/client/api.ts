@@ -33,14 +33,8 @@ const HANDLER_FIELDS = [
 	"Effect",
 ];
 
-function sharedOnly(fnName: string) {
-	return () => error(`WC.${fnName} only works in a module inside ReplicatedStorage.WorldsCollide_Shared`, 2);
-}
-
-export const AddAbility = sharedOnly("AddAbility");
-export const AddKit = sharedOnly("AddKit");
-export const AddResource = sharedOnly("AddResource");
-export const AddDefaultAbility = sharedOnly("AddDefaultAbility");
+// Definitions belong in the Shared folder; these stubs say so if called here.
+export { AddAbility, AddDefaultAbility, AddKit, AddResource } from "shared/apiStubs";
 
 /*
 	Give an ability its client side: a table of optional functions.

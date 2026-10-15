@@ -131,9 +131,7 @@ export abstract class ability {
 
 	// Subscribe for as long as this activation lasts.
 	public listenWhileActive<T extends unknown[]>(ctx: ActiveContext, signal: Signal<T>, handler: (...args: T) => void) {
-		const list = this.activeConnections.get(ctx.active) ?? [];
-		list.push(signal.Connect(handler));
-		this.activeConnections.set(ctx.active, list);
+		this.trackActive(ctx.active, signal.Connect(handler));
 	}
 
 	// Change damage the caster deals ("outgoing") or takes ("incoming") while granted.
@@ -143,9 +141,7 @@ export abstract class ability {
 
 	// Same, but only for as long as this activation lasts.
 	public addDamageHookWhileActive(ctx: ActiveContext, direction: "outgoing" | "incoming", hook: DamageHook) {
-		const list = this.activeConnections.get(ctx.active) ?? [];
-		list.push(this.hookDamage(ctx, direction, hook));
-		this.activeConnections.set(ctx.active, list);
+		this.trackActive(ctx.active, this.hookDamage(ctx, direction, hook));
 	}
 
 	private hookDamage(ctx: AbilityContext, direction: "outgoing" | "incoming", hook: DamageHook): Connection {
@@ -156,25 +152,23 @@ export abstract class ability {
 
 	// Hit someone through the shared combat rules, tagged with this ability.
 	public strike(ctx: AbilityContext, victim: Model, opts: StrikeOptions): StrikeResult | undefined {
-		return strike(ctx.caster, victim, { ...opts, tags: ["ability", this.def.id, ...(opts.tags ?? [])] });
+		return strike(ctx.caster, victim, { ...opts, tags: this.tagged(opts.tags) });
 	}
 
 	// Fire a projectile owned by the caster, tagged with this ability.
 	public fireProjectile(ctx: AbilityContext, opts: ProjectileOptions): Projectile {
-		return fireProjectile(ctx.caster, { ...opts, tags: ["ability", this.def.id, ...(opts.tags ?? [])] });
+		return fireProjectile(ctx.caster, { ...opts, tags: this.tagged(opts.tags) });
 	}
 
 	// Fire a beam owned by the caster. It lasts until its own duration/End().
 	public fireBeam(ctx: AbilityContext, opts: BeamOptions): Beam {
-		return fireBeam(ctx.caster, { ...opts, tags: ["ability", this.def.id, ...(opts.tags ?? [])] });
+		return fireBeam(ctx.caster, { ...opts, tags: this.tagged(opts.tags) });
 	}
 
 	// Fire a beam that ends when this activation ends (channelled beams).
 	public fireBeamWhileActive(ctx: ActiveContext, opts: BeamOptions): Beam {
 		const beam = this.fireBeam(ctx, opts);
-		const list = this.activeConnections.get(ctx.active) ?? [];
-		list.push({ Disconnect: () => beam.End("cancelled") });
-		this.activeConnections.set(ctx.active, list);
+		this.trackActive(ctx.active, { Disconnect: () => beam.End("cancelled") });
 		return beam;
 	}
 
@@ -197,10 +191,21 @@ export abstract class ability {
 	// service plumbing
 	// ------------------------------------------------------------------------
 
+	// ["ability", <id>, ...extra]: how damage hooks and events tell what made a hit.
+	private tagged(extra: readonly string[] | undefined): string[] {
+		return ["ability", this.def.id, ...(extra ?? [])];
+	}
+
 	private track(gp: Generic_Player, connection: Connection) {
 		const list = this.grantedConnections.get(gp) ?? [];
 		list.push(connection);
 		this.grantedConnections.set(gp, list);
+	}
+
+	private trackActive(active: ActiveAbility, connection: Connection) {
+		const list = this.activeConnections.get(active) ?? [];
+		list.push(connection);
+		this.activeConnections.set(active, list);
 	}
 
 	/** @internal called by abilityService after OnRevoked */

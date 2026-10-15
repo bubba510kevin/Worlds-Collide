@@ -7,7 +7,8 @@
 		1. Lookup     - is this a registered Generic_Player?
 		2. Rate limit - may they ask again yet?
 		3. Handler    - type-check every argument, check authority, act.
-		4. Replicate  - push a fresh snapshot if the handler changed state.
+		4. Replicate  - anything that changed state marks the player dirty;
+		               start() sends one snapshot per dirty player per frame.
 
 	A handler that throws is caught and logged; it cannot take the connection
 	down, which would otherwise be a free denial of service.
@@ -17,11 +18,11 @@ import { RunService } from "@rbxts/services";
 import { Config } from "shared/config";
 import { ClientToServerRemote, getRemote } from "shared/remotes";
 import { Generic_Player } from "../generic_player/generic_player";
-import { getGenericPlayer } from "../players";
+import { activePlayers, getGenericPlayer } from "../players";
 
 const StateChanged = getRemote("StateChanged");
 
-export function push(gp: Generic_Player) {
+function push(gp: Generic_Player) {
 	gp.dirty = false;
 	StateChanged.FireClient(gp.GetInstance(), gp.ToSnapshot());
 }
@@ -65,7 +66,16 @@ export function onRemote(name: ClientToServerRemote, handler: (gp: Generic_Playe
 
 		const [ok, err] = pcall(handler, gp, ...args);
 		if (!ok) warn(`[Remotes] handler ${name} errored for ${player.Name}: ${err}`);
+	});
+}
 
-		if (gp.dirty) push(gp);
+/*
+	The one place snapshots are sent from: every frame, each player whose
+	state changed (MarkDirty) gets a single fresh snapshot, no matter how many
+	things changed that frame.
+*/
+export function start() {
+	RunService.Heartbeat.Connect(() => {
+		for (const [, gp] of activePlayers) if (gp.dirty) push(gp);
 	});
 }

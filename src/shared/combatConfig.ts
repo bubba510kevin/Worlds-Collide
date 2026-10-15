@@ -5,14 +5,6 @@
 	client both read this file.
 */
 
-export interface ComboPose {
-	Pitch: number;
-	Yaw: number;
-	Elbow: number;
-	Twist: number;
-	Lean: number;
-}
-
 export interface ComboAttack {
 	Name: string;
 	Damage: number;
@@ -29,13 +21,8 @@ export interface ComboAttack {
 	Stun: number;
 	KnockbackDistance: number;
 	KnockbackDuration: number;
-	LungeDistance: number;
-	LungeDuration: number;
 	Hitstop: number;
-	Shake: number;
-	WindupFraction: number;
 	Finisher: boolean;
-	AnimationId: string;
 }
 
 const DEFAULTS = {
@@ -45,13 +32,8 @@ const DEFAULTS = {
 	Stun: 0.4,
 	KnockbackDistance: 1.5,
 	KnockbackDuration: 0.15,
-	LungeDistance: 3,
-	LungeDuration: 0.12,
 	Hitstop: 0.06,
-	Shake: 0.15,
-	WindupFraction: 0.55,
 	Finisher: false,
-	AnimationId: "",
 };
 
 type AttackSpec = Pick<ComboAttack, "Name" | "Damage" | "Startup" | "Active" | "Cooldown"> & Partial<ComboAttack>;
@@ -97,14 +79,13 @@ export const CombatConfig = {
 	Combo: [
 		attack({ Name: "Jab", Damage: 5, Startup: 0.12, Active: 0.1, Cooldown: 0.36 }),
 		attack({ Name: "Cross", Damage: 5, Startup: 0.12, Active: 0.1, Cooldown: 0.36 }),
-		attack({ Name: "Hook", Damage: 6, Startup: 0.15, Active: 0.1, Cooldown: 0.4, LungeDistance: 3.5, Hitstop: 0.07 }),
+		attack({ Name: "Hook", Damage: 6, Startup: 0.15, Active: 0.1, Cooldown: 0.4, Hitstop: 0.07 }),
 		attack({
 			Name: "Left Hook",
 			Damage: 7,
 			Startup: 0.15,
 			Active: 0.1,
 			Cooldown: 0.42,
-			LungeDistance: 3.5,
 			Hitstop: 0.07,
 		}),
 		attack({
@@ -117,10 +98,7 @@ export const CombatConfig = {
 			Stun: 0.7,
 			KnockbackDistance: 13,
 			KnockbackDuration: 0.35,
-			LungeDistance: 6,
-			LungeDuration: 0.18,
 			Hitstop: 0.12,
-			Shake: 0.6,
 		}),
 	] as readonly ComboAttack[],
 };
@@ -129,4 +107,10 @@ export const CombatConfig = {
 export function getComboAttack(index: unknown): ComboAttack | undefined {
 	if (!typeIs(index, "number") || index % 1 !== 0) return undefined;
 	return CombatConfig.Combo[index - 1];
+}
+
+// Recovery after an attack: the held weapon's attack_speed shortens (or lengthens) it.
+// Shared so the client predicts exactly what the server enforces.
+export function attackCooldown(attack: ComboAttack, attackSpeed = 1): number {
+	return attack.Cooldown / math.max(attackSpeed, 0.1);
 }

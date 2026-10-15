@@ -113,6 +113,8 @@ export class Projectile {
 
 	private readonly ignore: Instance[];
 	private readonly params = new RaycastParams();
+	// The ignore list changed since it was last handed to `params`.
+	private filterDirty = true;
 
 	constructor(owner: Generic_Player, opts: ProjectileOptions, private readonly host: ProjectileHost) {
 		nextId += 1;
@@ -200,7 +202,7 @@ export class Projectile {
 				remaining = this.onCharacter(victim, hit, leftover);
 			} else if (!hit.Instance.CanCollide && this.opts.hitsWorld !== false) {
 				// Non-collidable scenery (VFX, hitboxes) never stops a projectile.
-				this.ignore.push(hit.Instance);
+				this.addIgnore(hit.Instance);
 				remaining = leftover;
 			} else {
 				remaining = this.onWorld(hit, leftover);
@@ -232,13 +234,21 @@ export class Projectile {
 	}
 
 	private cast(displacement: Vector3): RaycastResult | undefined {
-		this.params.FilterDescendantsInstances = this.ignore;
+		if (this.filterDirty) {
+			this.params.FilterDescendantsInstances = this.ignore;
+			this.filterDirty = false;
+		}
 		if (this.radius > 0) return Workspace.Spherecast(this.position, this.radius, displacement, this.params);
 		return Workspace.Raycast(this.position, displacement, this.params);
 	}
 
+	private addIgnore(instance: Instance) {
+		this.ignore.push(instance);
+		this.filterDirty = true;
+	}
+
 	private onCharacter(victim: Model, hit: RaycastResult, leftover: Vector3): Vector3 {
-		this.ignore.push(victim);
+		this.addIgnore(victim);
 		if (this.hit.has(victim)) return leftover;
 		if (this.opts.CanHit && !this.opts.CanHit(this, victim)) return leftover;
 		this.hit.add(victim);
@@ -280,7 +290,7 @@ export class Projectile {
 		}
 
 		if (decision === "pass") {
-			this.ignore.push(hit.Instance);
+			this.addIgnore(hit.Instance);
 			return leftover;
 		}
 		if (decision === "bounce") {

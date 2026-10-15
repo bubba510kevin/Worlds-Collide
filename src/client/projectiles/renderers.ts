@@ -13,6 +13,7 @@
 */
 
 import { Debris, TweenService, Workspace } from "@rbxts/services";
+import { effectPart } from "shared/effects";
 import * as CombatFX from "../combat/combatFX";
 
 export interface ProjectileVisual {
@@ -60,17 +61,6 @@ function colorFrom(data: unknown, fallback: Color3): Color3 {
 		if (typeIs(color, "Color3")) return color;
 	}
 	return fallback;
-}
-
-function effectPart(): Part {
-	const part = new Instance("Part");
-	part.Anchored = true;
-	part.CanCollide = false;
-	part.CanQuery = false;
-	part.CanTouch = false;
-	part.CastShadow = false;
-	part.Material = Enum.Material.Neon;
-	return part;
 }
 
 // ----------------------------------------------------------------------------

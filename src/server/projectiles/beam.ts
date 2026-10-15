@@ -105,7 +105,9 @@ export class Beam {
 		const ownerChar = owner.GetCharacter();
 		if (ownerChar) this.ignore.push(ownerChar);
 		this.params.FilterType = Enum.RaycastFilterType.Exclude;
+		this.params.FilterDescendantsInstances = this.ignore;
 		this.overlap.FilterType = Enum.RaycastFilterType.Exclude;
+		this.overlap.FilterDescendantsInstances = this.ignore;
 
 		this.origin = this.resolveOrigin() ?? Vector3.zero;
 		this.direction = this.resolveDirection() ?? new Vector3(0, 0, -1);
@@ -144,17 +146,24 @@ export class Beam {
 	// Distance to the first wall along the beam, up to `max`.
 	private wallDistance(max: number): number {
 		if (this.opts.hitsWorld === false || max <= 0) return max;
-		const ignored = [...this.ignore];
+		// `params` holds the permanent ignore list; anything skipped this frame
+		// is added on top and the list is restored afterwards.
+		let skipped = false;
+		let distance = max;
 		for (let pass = 0; pass < 6; pass++) {
-			this.params.FilterDescendantsInstances = ignored;
 			const hit = Workspace.Raycast(this.origin, this.direction.mul(max), this.params);
-			if (!hit) return max;
+			if (!hit) break;
 			// Characters are targets and VFX parts are scenery; neither stops it.
 			const owner = GetCharacterFromPart(hit.Instance);
-			if (!owner && hit.Instance.CanCollide) return hit.Distance;
-			ignored.push(owner ?? hit.Instance);
+			if (!owner && hit.Instance.CanCollide) {
+				distance = hit.Distance;
+				break;
+			}
+			this.params.AddToFilter(owner ?? hit.Instance);
+			skipped = true;
 		}
-		return max;
+		if (skipped) this.params.FilterDescendantsInstances = this.ignore;
+		return distance;
 	}
 
 	/*
@@ -200,7 +209,6 @@ export class Beam {
 		const center = this.origin.add(this.direction.mul(this.reach / 2));
 		const boxCFrame = CFrame.lookAt(center, center.add(this.direction));
 		const size = new Vector3(this.opts.width, this.opts.width, this.reach);
-		this.overlap.FilterDescendantsInstances = this.ignore;
 
 		// Every character touching the beam, nearest first.
 		const seen = new Set<Model>();

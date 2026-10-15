@@ -19,9 +19,12 @@
 import { getAbility, getKit, isBindable } from "shared/abilities/registry";
 import { AbilitySnapshot } from "shared/abilities/types";
 
+// What the holder needs from the held item (an `item` satisfies this).
 export interface HeldAbilities {
-	uid: string;
-	abilities: readonly string[];
+	readonly uid: string;
+	// Bumped whenever GetAbilities() would return something different.
+	readonly abilityVersion: number;
+	GetAbilities(): readonly string[];
 }
 
 export interface ActiveAbility {
@@ -51,6 +54,15 @@ export class AbilityHolder {
 	private readonly chargeStates = new Map<string, ChargeState>();
 	private readonly actives = new Map<string, ActiveAbility>();
 
+	// GetAll() cache. Rebuilt only when grants change, the held item (or its
+	// abilities) change, or a timed grant expires - not every frame.
+	private grantsVersion = 0;
+	private cached?: Map<string, string>;
+	private cachedGrantsVersion = -1;
+	private cachedHeld?: HeldAbilities;
+	private cachedHeldVersion = -1;
+	private cacheExpiresAt = 0;
+
 	constructor(private readonly heldItem: () => HeldAbilities | undefined) {}
 
 	// ------------------------------------------------------------------------
@@ -70,6 +82,7 @@ export class AbilityHolder {
 			this.grants.set(id, sources);
 		}
 		sources.set(source, duration !== undefined ? os.clock() + duration : undefined);
+		this.grantsVersion += 1;
 		return true;
 	}
 
@@ -77,6 +90,7 @@ export class AbilityHolder {
 		const sources = this.grants.get(id);
 		if (!sources || !sources.delete(source)) return false;
 		if (sources.isEmpty()) this.grants.delete(id);
+		this.grantsVersion += 1;
 		return true;
 	}
 
@@ -134,28 +148,49 @@ export class AbilityHolder {
 	// what the player has right now
 	// ------------------------------------------------------------------------
 
-	// ability id -> the source providing it. Expired timed grants are dropped.
-	public GetAll(): Map<string, string> {
+	/*
+		ability id -> the source providing it. Expired timed grants are dropped.
+		The map is cached and shared: read it, never modify it. The same map
+		object is returned until something changes, so callers can compare
+		identity to notice changes cheaply.
+	*/
+	public GetAll(): ReadonlyMap<string, string> {
 		const now = os.clock();
-		const result = new Map<string, string>();
+		const held = this.heldItem();
+		if (
+			this.cached &&
+			this.cachedGrantsVersion === this.grantsVersion &&
+			this.cachedHeld === held &&
+			this.cachedHeldVersion === (held?.abilityVersion ?? -1) &&
+			now < this.cacheExpiresAt
+		) {
+			return this.cached;
+		}
 
+		const result = new Map<string, string>();
+		let nextExpiry = math.huge;
 		for (const [id, sources] of this.grants) {
 			for (const [source, untilTime] of sources) {
 				if (untilTime !== undefined && untilTime <= now) {
 					sources.delete(source);
-				} else if (!result.has(id)) {
-					result.set(id, source);
+					continue;
 				}
+				if (untilTime !== undefined) nextExpiry = math.min(nextExpiry, untilTime);
+				if (!result.has(id)) result.set(id, source);
 			}
 			if (sources.isEmpty()) this.grants.delete(id);
 		}
-
-		const held = this.heldItem();
 		if (held) {
-			for (const id of held.abilities) {
+			for (const id of held.GetAbilities()) {
 				if (!result.has(id) && isBindable(id, "item")) result.set(id, `item:${held.uid}`);
 			}
 		}
+
+		this.cached = result;
+		this.cachedGrantsVersion = this.grantsVersion;
+		this.cachedHeld = held;
+		this.cachedHeldVersion = held?.abilityVersion ?? -1;
+		this.cacheExpiresAt = nextExpiry;
 		return result;
 	}
 
@@ -281,6 +316,10 @@ export class AbilityHolder {
 
 	public IsActive(id: string): boolean {
 		return this.actives.has(id);
+	}
+
+	public HasActives(): boolean {
+		return !this.actives.isEmpty();
 	}
 
 	public GetActives(): ActiveAbility[] {

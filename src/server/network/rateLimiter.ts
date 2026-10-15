@@ -8,8 +8,6 @@
 
 interface Bucket {
 	tokens: number;
-	burst: number;
-	refill: number;
 	updatedAt: number;
 }
 
@@ -23,13 +21,13 @@ export class RateLimiter {
 
 		let bucket = this.buckets.get(key);
 		if (!bucket) {
-			bucket = { tokens: burst, burst, refill, updatedAt: now };
+			bucket = { tokens: burst, updatedAt: now };
 			this.buckets.set(key, bucket);
 		}
 
 		const elapsed = math.max(0, now - bucket.updatedAt);
 		bucket.updatedAt = now;
-		bucket.tokens = math.min(bucket.burst, bucket.tokens + elapsed * bucket.refill);
+		bucket.tokens = math.min(burst, bucket.tokens + elapsed * refill);
 
 		if (bucket.tokens < 1) return false;
 		bucket.tokens -= 1;

@@ -13,8 +13,9 @@
 	Luau tables.
 */
 
+import { Config } from "../config";
 import { ABILITIES, DEFAULT_ABILITIES, KITS, RESOURCES } from "./catalog";
-import { AbilityBinding, AbilityDef, AbilityInput, KitDef, ResourceDef, StatKey } from "./types";
+import { AbilityBinding, AbilityDef, KitDef, ResourceDef, StatKey } from "./types";
 
 const abilityById = new Map<string, AbilityDef>();
 const kitById = new Map<string, KitDef>();
@@ -28,7 +29,14 @@ const listeners: (() => void)[] = [];
 
 const BINDINGS = new Set<string>(["player", "item", "any"]);
 const INPUTS = new Set<string>(["press", "hold", "toggle", "passive"]);
-const STATS = new Set<string>(["health", "defense", "energy", "speed", "strength", "critChance", "critDamage"]);
+// The stat names, taken from the default stats so there is one list to edit.
+export const STAT_NAMES: readonly string[] = (() => {
+	const names: string[] = [];
+	for (const [name] of pairs(Config.DefaultPlayerStats)) names.push(name as string);
+	names.sort();
+	return names;
+})();
+const STATS = new Set<string>(STAT_NAMES);
 
 // ----------------------------------------------------------------------------
 // validation
@@ -90,7 +98,7 @@ function validateAbility(raw: unknown): AbilityDef {
 		for (const [, mod] of pairs(t.modifiers as object)) {
 			const m = mod as Record<string, unknown>;
 			if (!typeIs(m, "table") || !STATS.has(m.stat as string)) {
-				fail(what, `each modifier needs a "stat": one of ${[...STATS].join(", ")}`);
+				fail(what, `each modifier needs a "stat": one of ${STAT_NAMES.join(", ")}`);
 			}
 			if (m.flat !== undefined && !typeIs(m.flat, "number")) fail(what, `modifier "flat" must be a number`);
 			if (m.mult !== undefined && !typeIs(m.mult, "number")) fail(what, `modifier "mult" must be a number`);
@@ -224,14 +232,6 @@ export function getKitsInGroup(group: string): KitDef[] {
 export function isBindable(id: unknown, from: "player" | "item"): boolean {
 	const binding: AbilityBinding | undefined = getAbility(id)?.binding;
 	return binding === from || binding === "any";
-}
-
-export function hasTag(id: unknown, tag: string): boolean {
-	return getAbility(id)?.tags?.includes(tag) ?? false;
-}
-
-export function inputOf(id: unknown): AbilityInput | undefined {
-	return getAbility(id)?.input;
 }
 
 export function isStatKey(value: unknown): value is StatKey {

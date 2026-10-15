@@ -85,7 +85,6 @@ export interface PartStats {
 	readonly durability: number;
 	readonly critDamage: number;
 	readonly critChance: number;
-	readonly energy: number;
 	readonly capacity: number;
 	// Item-bound abilities (including passives) the part grants.
 	readonly abilities: readonly AbilityId[];

@@ -5,6 +5,7 @@
 */
 
 import { Debris, Players, RunService, TweenService, Workspace } from "@rbxts/services";
+import { effectPart } from "shared/effects";
 
 const SETTINGS = {
 	HitEffectLifetime: 0.22,
@@ -53,12 +54,8 @@ export function HitFlash(character: Model) {
 }
 
 export function Impact(position: Vector3) {
-	const holder = new Instance("Part");
+	const holder = effectPart();
 	holder.Name = "CombatImpact";
-	holder.Anchored = true;
-	holder.CanCollide = false;
-	holder.CanTouch = false;
-	holder.CanQuery = false;
 	holder.Transparency = 1;
 	holder.Size = new Vector3(0.2, 0.2, 0.2);
 	holder.Position = position;
@@ -88,15 +85,10 @@ export function Impact(position: Vector3) {
 	sparks.Parent = attachment;
 	sparks.Emit(SETTINGS.HitSparkCount);
 
-	const flash = new Instance("Part");
+	const flash = effectPart();
 	flash.Name = "ImpactFlash";
 	flash.Shape = Enum.PartType.Ball;
-	flash.Material = Enum.Material.Neon;
 	flash.Color = Color3.fromRGB(255, 230, 120);
-	flash.Anchored = true;
-	flash.CanCollide = false;
-	flash.CanTouch = false;
-	flash.CanQuery = false;
 	flash.Transparency = 0.15;
 	flash.Size = new Vector3(0.35, 0.35, 0.35);
 	flash.Position = position;

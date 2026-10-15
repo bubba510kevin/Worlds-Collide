@@ -113,11 +113,14 @@ function grabR6(setJoint: SetJoint, e: number) {
 	setJoint("Left Shoulder", CFrame.Angles(0, 0, -armAngle));
 }
 
-function findMotor(character: Model, name: string): Motor6D | undefined {
+// The named Motor6Ds in one pass over the character (first match per name).
+function findMotors(character: Model, names: readonly string[]): Map<string, Motor6D> {
+	const wanted = new Set(names);
+	const found = new Map<string, Motor6D>();
 	for (const obj of character.GetDescendants()) {
-		if (obj.IsA("Motor6D") && obj.Name === name) return obj;
+		if (obj.IsA("Motor6D") && wanted.has(obj.Name) && !found.has(obj.Name)) found.set(obj.Name, obj);
 	}
-	return undefined;
+	return found;
 }
 
 function setAnimateEnabled(animate: Instance | undefined, enabled: boolean) {
@@ -131,10 +134,7 @@ export function startPose(character: Model, humanoid: Humanoid, mode: PoseMode):
 	const poseFunction = mode === "grab" ? (isR15 ? grabR15 : grabR6) : isR15 ? runR15 : runR6;
 
 	const joints = new Map<string, { motor: Motor6D; c0: CFrame }>();
-	for (const name of names) {
-		const motor = findMotor(character, name);
-		if (motor) joints.set(name, { motor, c0: motor.C0 });
-	}
+	for (const [name, motor] of findMotors(character, names)) joints.set(name, { motor, c0: motor.C0 });
 
 	const setJoint: SetJoint = (name, offset) => {
 		const j = joints.get(name);
@@ -147,18 +147,19 @@ export function startPose(character: Model, humanoid: Humanoid, mode: PoseMode):
 	const animator = humanoid.FindFirstChildOfClass("Animator");
 	const startTime = os.clock();
 
-	const applyPose = () => {
-		if (animator) {
-			for (const track of animator.GetPlayingAnimationTracks()) track.Stop(0);
-		}
-		poseFunction(setJoint, os.clock() - startTime);
-	};
+	// Stop what's playing now, and anything that starts while posed.
+	if (animator) for (const track of animator.GetPlayingAnimationTracks()) track.Stop(0);
+	const playedConnection = animator?.AnimationPlayed.Connect((track) => track.Stop(0));
 
+	const applyPose = () => poseFunction(setJoint, os.clock() - startTime);
+
+	// Both steps, so nothing else writes the joints between our writes.
 	applyPose();
 	const renderConnection = RunService.PreRender.Connect(applyPose);
 	const simulationConnection = RunService.PreSimulation.Connect(applyPose);
 
 	return () => {
+		playedConnection?.Disconnect();
 		renderConnection.Disconnect();
 		simulationConnection.Disconnect();
 		for (const [, j] of joints) {

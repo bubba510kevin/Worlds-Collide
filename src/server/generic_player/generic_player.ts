@@ -43,10 +43,7 @@ export class Generic_Player {
 	// Changes to effective stats. Remove by source when the cause goes away.
 	public readonly modifiers = new StatModifiers<StatKey>();
 	public readonly resources = new Resources((stat) => this.GetStat(stat));
-	public readonly abilities = new AbilityHolder(() => {
-		const held = this.HoldingItem();
-		return held ? { uid: held.uid, abilities: held.GetAbilities() } : undefined;
-	});
+	public readonly abilities = new AbilityHolder(() => this.HoldingItem());
 
 	// Damage hooks (see abilities/events.ts): hits this player lands / takes.
 	public readonly outgoingDamage = new Set<DamageHook>();

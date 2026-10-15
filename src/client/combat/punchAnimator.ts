@@ -1,7 +1,7 @@
 /*
 	punchAnimator.ts  (client)
 
-	Procedural punch / block / dash / hit-react animation for the local
+	Procedural punch / block / hit-react animation for the local
 	character, written straight onto Motor6D.Transform every PreSimulation, so
 	it needs no animation assets. Built for R6 joint names ("Right Shoulder").
 
@@ -9,6 +9,7 @@
 */
 
 import { RunService } from "@rbxts/services";
+import { CombatConfig } from "shared/combatConfig";
 
 interface Pose {
 	pitch: number;
@@ -47,8 +48,7 @@ interface WindFx {
 	Attachments: Attachment[];
 }
 
-interface PunchAction {
-	Kind: "Punch";
+interface Action {
 	Joint: Motor6D;
 	OffJoint?: Motor6D;
 	OffArm?: ArmPose;
@@ -64,16 +64,6 @@ interface PunchAction {
 	FadeDuration: number;
 	WindOn: boolean;
 }
-
-interface DashAction {
-	Kind: "Dash";
-	StartTime: number;
-	Duration: number;
-	FadeStart?: number;
-	FadeDuration: number;
-}
-
-type Action = PunchAction | DashAction;
 
 let Character: Model | undefined;
 let Humanoid: Humanoid | undefined;
@@ -101,7 +91,6 @@ const LastWritten = new Map<Motor6D, CFrame>();
 const FrameTouched = new Set<Motor6D>();
 const Snapshot = new Map<Motor6D, CFrame>();
 
-const PUNCH_WALKSPEED = 2;
 
 const PUNCH_TIMING: Timing = { Windup: 0.13, Extend: 0.16, Hold: 0.07, Retract: 0.2 };
 const FINISHER_TIMING: Timing = { Windup: 0.2, Extend: 0.16, Hold: 0.08, Retract: 0.22 };
@@ -151,7 +140,6 @@ const PUNCHES: PunchDef[] = [
 
 const BLOCK_R: Pose = { pitch: 82, yaw: 34, push: 0.15, twist: 0, lean: 6, lunge: -0.05 };
 const BLOCK_L: ArmPose = { pitch: 92, yaw: 34, push: 0.2 };
-const DASH_POSE: Pose = { pitch: -40, yaw: -8, push: -0.15, twist: 0, lean: 18, lunge: 0.2 };
 const HIT_ARM: ArmPose = { pitch: -20, yaw: -12, push: -0.1 };
 
 const WIND_COLOR = Color3.fromRGB(235, 245, 255);
@@ -321,14 +309,6 @@ function samplePhases(elapsed: number, timing: Timing, windupPose: Pose, strikeP
 	return undefined;
 }
 
-function sampleDash(elapsed: number, duration: number) {
-	if (elapsed >= duration) return undefined;
-	const a = elapsed / duration;
-	if (a < 0.25) return easeOutQuart(a / 0.25);
-	if (a > 0.7) return 1 - easeInOutSine((a - 0.7) / 0.3);
-	return 1;
-}
-
 // ----------------------------------------------------------------------------
 // wind trails
 // ----------------------------------------------------------------------------
@@ -389,7 +369,7 @@ function destroyWind() {
 	Wind.clear();
 }
 
-function setWind(action: PunchAction, on: boolean) {
+function setWind(action: Action, on: boolean) {
 	if (action.WindOn === on) return;
 	action.WindOn = on;
 
@@ -406,7 +386,7 @@ function setWind(action: PunchAction, on: boolean) {
 	});
 }
 
-function updateWind(action: PunchAction, elapsed: number) {
+function updateWind(action: Action, elapsed: number) {
 	const t = action.Timing;
 	const active =
 		action.FadeStart === undefined && elapsed >= t.Windup * 0.85 && elapsed < t.Windup + t.Extend + t.Hold * 0.5;
@@ -420,38 +400,27 @@ function updateWind(action: PunchAction, elapsed: number) {
 function updateAction(action: Action, now: number): boolean {
 	const elapsed = now - action.StartTime;
 
-	let weight =
-		action.Kind === "Dash"
-			? sampleDash(elapsed, action.Duration)
-			: samplePhases(elapsed, action.Timing, action.WindupPose, action.StrikePose, action.Pose, action.ArcLift);
-
+	let weight = samplePhases(elapsed, action.Timing, action.WindupPose, action.StrikePose, action.Pose, action.ArcLift);
 	if (weight === undefined) {
-		if (action.Kind === "Punch") setWind(action, false);
+		setWind(action, false);
 		return false;
 	}
 
 	if (action.FadeStart !== undefined) {
 		const f = (now - action.FadeStart) / action.FadeDuration;
 		if (f >= 1) {
-			if (action.Kind === "Punch") setWind(action, false);
+			setWind(action, false);
 			return false;
 		}
 		weight *= 1 - easeInOutSine(f);
 	}
 
-	if (action.Kind === "Dash") {
-		const torsoCF = applyTorso(DASH_POSE, 1, weight);
-		applyLimb(RightShoulder, torsoCF, DASH_POSE, 1, weight);
-		applyLimb(LeftShoulder, torsoCF, DASH_POSE, -1, weight);
-	} else {
-		updateWind(action, elapsed);
-		const torsoCF = applyTorso(action.Pose, action.Side, weight);
-		applyLimb(action.Joint, torsoCF, action.Pose, action.Side, weight);
-		if (action.OffJoint && action.OffArm) {
-			applyLimb(action.OffJoint, torsoCF, action.OffArm, -action.Side, weight * 0.8);
-		}
+	updateWind(action, elapsed);
+	const torsoCF = applyTorso(action.Pose, action.Side, weight);
+	applyLimb(action.Joint, torsoCF, action.Pose, action.Side, weight);
+	if (action.OffJoint && action.OffArm) {
+		applyLimb(action.OffJoint, torsoCF, action.OffArm, -action.Side, weight * 0.8);
 	}
-
 	return true;
 }
 
@@ -466,9 +435,9 @@ function retire(action: Action | undefined, fadeTime?: number) {
 
 	const now = os.clock();
 	const elapsed = now - action.StartTime;
-	const early = action.Kind === "Punch" && elapsed < action.Timing.Windup + action.Timing.Extend;
+	const early = elapsed < action.Timing.Windup + action.Timing.Extend;
 
-	if (fadeTime !== undefined || action.Kind === "Dash" || early) {
+	if (fadeTime !== undefined || early) {
 		action.FadeStart = now;
 		action.FadeDuration = fadeTime ?? 0.1;
 	}
@@ -567,22 +536,9 @@ export function Setup(character: Model) {
 	createWind(RightShoulder);
 	createWind(LeftShoulder);
 
-	CurrentAction = undefined;
-	Lingering = [];
-	Blocking = false;
-	BlockAlpha = 0;
+	CancelActions();
 	HitStart = 0;
-	HitUntil = 0;
 	HitTwist = 0;
-	HitstopUntil = 0;
-
-	LastWritten.clear();
-	FrameTouched.clear();
-	Snapshot.clear();
-}
-
-export function CanPunch() {
-	return Character !== undefined && !hasToolEquipped();
 }
 
 // `index` is the 1-based combo index.
@@ -595,8 +551,7 @@ export function PlayAttack(index: number): boolean {
 
 	const offJoint = def.OffArm ? (def.Right ? LeftShoulder : RightShoulder) : undefined;
 
-	const action: PunchAction = {
-		Kind: "Punch",
+	const action: Action = {
 		Joint: joint,
 		OffJoint: offJoint,
 		OffArm: def.OffArm,
@@ -614,7 +569,7 @@ export function PlayAttack(index: number): boolean {
 
 	Blocking = false;
 	Humanoid.AutoRotate = true;
-	Humanoid.WalkSpeed = PUNCH_WALKSPEED;
+	Humanoid.WalkSpeed = CombatConfig.AttackWalkSpeed;
 
 	retire(CurrentAction);
 	CurrentAction = action;
@@ -629,23 +584,13 @@ export function PlayBlock(): boolean {
 	Blocking = true;
 
 	Humanoid.AutoRotate = true;
-	Humanoid.WalkSpeed = 2;
+	Humanoid.WalkSpeed = CombatConfig.BlockWalkSpeed;
 	return true;
 }
 
 export function StopBlock() {
 	Blocking = false;
 	if (Humanoid && Humanoid.Parent) Humanoid.AutoRotate = true;
-}
-
-export function PlayDash(duration = 0.25) {
-	if (!Character || !Root) return;
-
-	retire(CurrentAction, 0.1);
-	Blocking = false;
-	if (Humanoid) Humanoid.AutoRotate = true;
-
-	CurrentAction = { Kind: "Dash", StartTime: os.clock(), Duration: duration, FadeDuration: 0.1 };
 }
 
 export function PlayHitReact(duration = 0.2) {
@@ -685,19 +630,6 @@ export function CancelActions() {
 	disableWind();
 
 	if (Humanoid && Humanoid.Parent) Humanoid.AutoRotate = true;
-}
-
-export function Destroy() {
-	CancelActions();
-	destroyWind();
-	Character = undefined;
-	Humanoid = undefined;
-	Root = undefined;
-	RootJoint = undefined;
-	RightShoulder = undefined;
-	LeftShoulder = undefined;
-	RightHip = undefined;
-	LeftHip = undefined;
 }
 
 export function start() {

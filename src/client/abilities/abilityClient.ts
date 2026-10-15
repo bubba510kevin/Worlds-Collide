@@ -18,6 +18,7 @@
 import { Players, UserInputService } from "@rbxts/services";
 import { DEFAULT_BLOCKED_BY, getAbility } from "shared/abilities/registry";
 import { AbilityDef } from "shared/abilities/types";
+import { GetHumanoidAndRoot } from "shared/combatUtil";
 import { getRemote } from "shared/remotes";
 import * as CombatFX from "../combat/combatFX";
 import { heldWeaponStats } from "../state";
@@ -55,9 +56,8 @@ function send(id: string, action: "press" | "release" | "input", payload?: unkno
 
 function makeContext(def: AbilityDef): ClientAbilityContext | undefined {
 	const character = player.Character;
-	const humanoid = character?.FindFirstChildOfClass("Humanoid");
-	const root = character?.FindFirstChild("HumanoidRootPart");
-	if (!character || !humanoid || humanoid.Health <= 0 || !root || !root.IsA("BasePart")) return undefined;
+	const [humanoid, root] = GetHumanoidAndRoot(character);
+	if (!character || !humanoid || !root) return undefined;
 	return {
 		def,
 		character,

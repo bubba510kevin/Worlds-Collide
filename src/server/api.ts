@@ -12,18 +12,16 @@
 	Player. Errors are written for humans: they say what was wrong.
 */
 
-import { Players } from "@rbxts/services";
-import { getAbility, getKit, isStatKey } from "shared/abilities/registry";
-import { CombatConfig } from "shared/combatConfig";
+import { getAbility, getKit, isStatKey, STAT_NAMES } from "shared/abilities/registry";
 import { ability, AbilityContext, ActiveContext } from "./abilities/ability";
 import { cancelAbility, getBehaviour, registerBehaviour } from "./abilities/abilityService";
 import { DamageHook, GameEvents } from "./abilities/events";
 import { AbilityScript, SCRIPT_HOOKS, ScriptedAbility } from "./abilities/scriptedAbility";
-import { lockMovement, setTimedAttribute, strike, StrikeOptions, StrikeResult } from "./combat/combatService";
+import { applyStun, setTimedAttribute, strike, StrikeOptions, StrikeResult } from "./combat/combatService";
 import { Generic_Player } from "./generic_player/generic_player";
 import { item, new_item_stats } from "./item/item";
 import { sword } from "./item/weapon/sword";
-import { getGenericPlayer, getGenericPlayerFromCharacter } from "./players";
+import { activePlayers, getGenericPlayer, getGenericPlayerFromCharacter } from "./players";
 import { Beam, BeamOptions } from "./projectiles/beam";
 import { Projectile, ProjectileOptions } from "./projectiles/projectile";
 import { fireBeam, fireProjectile } from "./projectiles/projectileService";
@@ -57,26 +55,19 @@ function needActive(fnName: string, ctx: unknown): ActiveContext {
 	return ctx as ActiveContext;
 }
 
-const EVENT_NAMES = ["Hit", "Damaged", "AbilityActivated", "AbilityEnded", "AbilityGranted", "AbilityRevoked"];
+const EVENTS = GameEvents as unknown as Record<string, typeof GameEvents.Hit>;
+const EVENT_NAMES: string[] = [];
+for (const [name] of pairs(EVENTS)) EVENT_NAMES.push(name as string);
+EVENT_NAMES.sort();
 
 function needEvent(fnName: string, name: unknown) {
-	const signal = typeIs(name, "string") ? (GameEvents as unknown as Record<string, typeof GameEvents.Hit>)[name] : undefined;
+	const signal = typeIs(name, "string") ? EVENTS[name] : undefined;
 	if (!signal) error(`WC.${fnName}: unknown event "${tostring(name)}". Use one of: ${EVENT_NAMES.join(", ")}`, 3);
 	return signal;
 }
 
-// ----------------------------------------------------------------------------
-// definitions belong in the Shared folder
-// ----------------------------------------------------------------------------
-
-function sharedOnly(fnName: string) {
-	return () => error(`WC.${fnName} only works in a module inside ReplicatedStorage.WorldsCollide_Shared`, 2);
-}
-
-export const AddAbility = sharedOnly("AddAbility");
-export const AddKit = sharedOnly("AddKit");
-export const AddResource = sharedOnly("AddResource");
-export const AddDefaultAbility = sharedOnly("AddDefaultAbility");
+// Definitions belong in the Shared folder; these stubs say so if called here.
+export { AddAbility, AddDefaultAbility, AddKit, AddResource } from "shared/apiStubs";
 
 // ----------------------------------------------------------------------------
 // ability code
@@ -175,7 +166,7 @@ export function AddStatBonus(player: unknown, bonus: unknown) {
 	if (!gp) return;
 	const b = bonus as { id?: unknown; source?: unknown; stat?: unknown; flat?: unknown; mult?: unknown; seconds?: unknown };
 	if (!typeIs(bonus, "table") || !typeIs(b.id, "string")) error(`WC.AddStatBonus: needs a table with an "id"`, 2);
-	if (!isStatKey(b.stat)) error(`WC.AddStatBonus: "stat" must be health, defense, energy, speed, strength, critChance or critDamage`, 2);
+	if (!isStatKey(b.stat)) error(`WC.AddStatBonus: "stat" must be one of: ${STAT_NAMES.join(", ")}`, 2);
 	const mod = {
 		id: b.id,
 		source: typeIs(b.source, "string") ? b.source : b.id,
@@ -259,9 +250,7 @@ export function Stun(character: unknown, seconds: unknown) {
 	if (!typeIs(character, "Instance") || !character.IsA("Model") || !typeIs(seconds, "number")) {
 		error(`WC.Stun: use WC.Stun(characterModel, seconds)`, 2);
 	}
-	setTimedAttribute(character, "Stunned", seconds);
-	const humanoid = character.FindFirstChildOfClass("Humanoid");
-	if (humanoid) lockMovement(humanoid, CombatConfig.HitWalkSpeed, seconds);
+	applyStun(character, seconds);
 }
 
 export function MakeInvulnerable(character: unknown, seconds: unknown) {
@@ -360,5 +349,7 @@ export function ConfirmHit(ctx: unknown, victim: unknown, position: unknown, cri
 
 // Every player in the game right now.
 export function GetAllPlayers(): Player[] {
-	return Players.GetPlayers().filter((p) => getGenericPlayer(p) !== undefined);
+	const list: Player[] = [];
+	for (const [player] of activePlayers) list.push(player);
+	return list;
 }

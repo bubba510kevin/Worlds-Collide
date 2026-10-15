@@ -16,7 +16,7 @@ import { Inventory } from "./inventory/inventory";
 import { item, new_item_stats } from "./item/item";
 import { sword } from "./item/weapon/sword";
 import { usable_weapon } from "./item/weapon/weapon";
-import { AbilityHolder } from "./abilities/abilityHolder";
+import { AbilityHolder, HeldAbilities } from "./abilities/abilityHolder";
 import { StatModifiers } from "./stats/statModifiers";
 import { closestPointOnSegment, closestPointsOnSegments, positionAt, reflect, rotateTowards } from "shared/projectiles/math";
 
@@ -203,7 +203,7 @@ function runAbilityTests() {
 
 	// AbilityHolder with a fake held item. Uses FlashStep (player-bound) for
 	// grants; item-bound behaviour is checked through binding rules.
-	let held: { uid: string; abilities: string[] } | undefined;
+	let held: HeldAbilities | undefined;
 	const holder = new AbilityHolder(() => held);
 	const playerId = getDefaultAbilities()[0];
 	if (playerId !== undefined) {
@@ -218,7 +218,13 @@ function runAbilityTests() {
 		holder.Grant(playerId, "buff", 0);
 		check("holder: expired timed grant is gone", !holder.Has(playerId));
 
-		held = { uid: "x", abilities: [playerId] };
+		held = {
+			uid: "x",
+			abilityVersion: 0,
+			GetAbilities() {
+				return [playerId];
+			},
+		};
 		check(
 			"holder: an item cannot grant a player-only ability",
 			getAbility(playerId)!.binding !== "player" || !holder.Has(playerId),
