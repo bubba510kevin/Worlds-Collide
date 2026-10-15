@@ -20,8 +20,15 @@ export class Resources {
 
 	// `readStat` resolves a max given as a stat name.
 	constructor(private readonly readStat: (stat: StatKey) => number) {
+		this.addMissing();
+	}
+
+	// Create pools for resources registered since (Luau content can add more).
+	private addMissing() {
 		for (const def of getAllResources()) {
-			this.pools.set(def.id, { value: def.startEmpty ? 0 : this.GetMax(def.id), regenAt: 0 });
+			if (!this.pools.has(def.id)) {
+				this.pools.set(def.id, { value: def.startEmpty ? 0 : this.GetMax(def.id), regenAt: 0 });
+			}
 		}
 	}
 
@@ -67,6 +74,7 @@ export class Resources {
 	}
 
 	public Tick(dt: number) {
+		if (this.pools.size() < getAllResources().size()) this.addMissing();
 		const now = os.clock();
 		for (const [id, pool] of this.pools) {
 			const def = getResource(id);

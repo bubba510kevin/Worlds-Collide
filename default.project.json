@@ -1,12 +1,18 @@
 {
 	"name": "worlds-collide",
-	"globIgnorePaths": ["**/package.json", "**/tsconfig.json"],
+	"globIgnorePaths": [
+		"**/package.json",
+		"**/tsconfig.json"
+	],
 	"tree": {
 		"$className": "DataModel",
 		"ServerScriptService": {
 			"$className": "ServerScriptService",
 			"TS": {
 				"$path": "out/server"
+			},
+			"WorldsCollide_Server": {
+				"$path": "content/server"
 			}
 		},
 		"ReplicatedStorage": {
@@ -22,6 +28,12 @@
 			},
 			"TS": {
 				"$path": "out/shared"
+			},
+			"WorldsCollide_Shared": {
+				"$path": "content/shared"
+			},
+			"WorldsCollide_Client": {
+				"$path": "content/client"
 			}
 		},
 		"StarterPlayer": {

@@ -8,7 +8,7 @@
 */
 
 import { Players } from "@rbxts/services";
-import { DEFAULT_ABILITIES } from "shared/abilities/catalog";
+import { getDefaultAbilities } from "shared/abilities/registry";
 import { Config } from "shared/config";
 import { DefaultForgeStats, IsCategory } from "shared/forgeData";
 import { Generic_Player } from "../generic_player/generic_player";
@@ -38,7 +38,7 @@ function onPlayerAdded(player: Player) {
 	});
 	if (player.Character) gp.ApplyStatsToCharacter();
 
-	for (const id of DEFAULT_ABILITIES) gp.abilities.Grant(id, "innate");
+	for (const id of getDefaultAbilities()) gp.abilities.Grant(id, "innate");
 	giveStarterKit(gp);
 	push(gp);
 }

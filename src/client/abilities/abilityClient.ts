@@ -36,6 +36,12 @@ for (const h of HANDLERS) {
 	handlers.set(h.id, h);
 }
 
+// Add or replace an ability's client handler (used by the Luau API: WC.AbilityLook).
+export function registerHandler(handler: ClientAbility) {
+	if (!getAbility(handler.id)) error(`no ability called "${handler.id}" - add it with WC.AddAbility first`, 3);
+	handlers.set(handler.id, handler);
+}
+
 // An exclusive handler's OnPress is running.
 let busy = false;
 // hold abilities currently held down: id -> os.clock() pressed

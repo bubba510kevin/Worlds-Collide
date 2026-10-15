@@ -39,6 +39,17 @@ for (const impl of LIBRARY) {
 	behaviours.set(impl.def.id, impl);
 }
 
+// Add or replace an ability's behaviour (used by the Luau API: WC.AbilityCode).
+export function registerBehaviour(impl: ability) {
+	if (!getAbility(impl.def.id)) error(`no ability called "${impl.def.id}" - add it with WC.AddAbility first`, 3);
+	behaviours.set(impl.def.id, impl);
+}
+
+export function getBehaviour(id: string): ability | undefined {
+	const def = getAbility(id);
+	return def ? behaviourOf(def) : undefined;
+}
+
 function behaviourOf(def: AbilityDef): ability {
 	let impl = behaviours.get(def.id);
 	if (!impl) {

@@ -9,8 +9,7 @@
 */
 
 import { Config } from "shared/config";
-import { DEFAULT_ABILITIES } from "shared/abilities/catalog";
-import { getAbility, getAllAbilities, getAllKits, isBindable } from "shared/abilities/registry";
+import { getAbility, getAllAbilities, getAllKits, getDefaultAbilities, isBindable } from "shared/abilities/registry";
 import { CategoryOrder, DefaultForgeStats, EMPTY_PART, GetPart, HasPart, IsCategory } from "shared/forgeData";
 import { ForgeCategory } from "shared/types";
 import { Inventory } from "./inventory/inventory";
@@ -172,7 +171,7 @@ export function run(): boolean {
 
 function runAbilityTests() {
 	// catalog integrity
-	for (const id of DEFAULT_ABILITIES) check(`default ability ${id} is player-bindable`, isBindable(id, "player"));
+	for (const id of getDefaultAbilities()) check(`default ability ${id} is player-bindable`, isBindable(id, "player"));
 	for (const def of getAllAbilities()) {
 		check(`${def.id} has a non-negative cooldown`, def.cooldown >= 0);
 		check(`${def.id}: passives have no key`, def.input !== "passive" || def.defaultKey === undefined);
@@ -206,7 +205,7 @@ function runAbilityTests() {
 	// grants; item-bound behaviour is checked through binding rules.
 	let held: { uid: string; abilities: string[] } | undefined;
 	const holder = new AbilityHolder(() => held);
-	const playerId = DEFAULT_ABILITIES[0];
+	const playerId = getDefaultAbilities()[0];
 	if (playerId !== undefined) {
 		check("holder: grant a player ability", holder.Grant(playerId, "innate"));
 		check("holder: has it", holder.Has(playerId) && holder.SourceOf(playerId) === "innate");

@@ -1,5 +1,8 @@
 # Worlds Collide
 
+📘 **Making content in Luau?** Read the **[Use Guide](docs/USE_GUIDE.md)**.
+🛠️ **Changing the framework in TypeScript?** Read the **[Developer Guide](docs/DEV_GUIDE.md)**.
+
 A Roblox game written in TypeScript with [roblox-ts](https://roblox-ts.com) and synced into Studio with [Rojo](https://rojo.space).
 
 ## Setup
@@ -15,6 +18,11 @@ Rojo maps `out/server` to ServerScriptService, `out/shared` to ReplicatedStorage
 ## Layout
 
 ```
+content/                  Luau content (synced by Rojo, no build step)
+  shared/                 -> ReplicatedStorage.WorldsCollide_Shared   ability/kit/resource definitions
+  server/                 -> ServerScriptService.WorldsCollide_Server ability code
+  client/                 -> ReplicatedStorage.WorldsCollide_Client   ability looks
+
 src/
   shared/                 used by both server and client
     types.ts              stat blocks + snapshot types

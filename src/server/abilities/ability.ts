@@ -34,7 +34,7 @@
 
 	Dynamic numbers: GetCooldown(ctx), GetCosts(ctx).
 
-	Helpers clean up after themselves: listen()/addDamageHook() connections
+	Helpers (public so the Luau API can reach them) clean up after themselves: listen()/addDamageHook() connections
 	made in OnGranted are dropped on revoke; listenWhileActive() connections
 	are dropped when the activation ends.
 */
@@ -125,24 +125,24 @@ export abstract class ability {
 	// ------------------------------------------------------------------------
 
 	// Subscribe for as long as the ability is granted (call from OnGranted).
-	protected listen<T extends unknown[]>(ctx: AbilityContext, signal: Signal<T>, handler: (...args: T) => void) {
+	public listen<T extends unknown[]>(ctx: AbilityContext, signal: Signal<T>, handler: (...args: T) => void) {
 		this.track(ctx.caster, signal.Connect(handler));
 	}
 
 	// Subscribe for as long as this activation lasts.
-	protected listenWhileActive<T extends unknown[]>(ctx: ActiveContext, signal: Signal<T>, handler: (...args: T) => void) {
+	public listenWhileActive<T extends unknown[]>(ctx: ActiveContext, signal: Signal<T>, handler: (...args: T) => void) {
 		const list = this.activeConnections.get(ctx.active) ?? [];
 		list.push(signal.Connect(handler));
 		this.activeConnections.set(ctx.active, list);
 	}
 
 	// Change damage the caster deals ("outgoing") or takes ("incoming") while granted.
-	protected addDamageHook(ctx: AbilityContext, direction: "outgoing" | "incoming", hook: DamageHook) {
+	public addDamageHook(ctx: AbilityContext, direction: "outgoing" | "incoming", hook: DamageHook) {
 		this.track(ctx.caster, this.hookDamage(ctx, direction, hook));
 	}
 
 	// Same, but only for as long as this activation lasts.
-	protected addDamageHookWhileActive(ctx: ActiveContext, direction: "outgoing" | "incoming", hook: DamageHook) {
+	public addDamageHookWhileActive(ctx: ActiveContext, direction: "outgoing" | "incoming", hook: DamageHook) {
 		const list = this.activeConnections.get(ctx.active) ?? [];
 		list.push(this.hookDamage(ctx, direction, hook));
 		this.activeConnections.set(ctx.active, list);
@@ -155,22 +155,22 @@ export abstract class ability {
 	}
 
 	// Hit someone through the shared combat rules, tagged with this ability.
-	protected strike(ctx: AbilityContext, victim: Model, opts: StrikeOptions): StrikeResult | undefined {
+	public strike(ctx: AbilityContext, victim: Model, opts: StrikeOptions): StrikeResult | undefined {
 		return strike(ctx.caster, victim, { ...opts, tags: ["ability", this.def.id, ...(opts.tags ?? [])] });
 	}
 
 	// Fire a projectile owned by the caster, tagged with this ability.
-	protected fireProjectile(ctx: AbilityContext, opts: ProjectileOptions): Projectile {
+	public fireProjectile(ctx: AbilityContext, opts: ProjectileOptions): Projectile {
 		return fireProjectile(ctx.caster, { ...opts, tags: ["ability", this.def.id, ...(opts.tags ?? [])] });
 	}
 
 	// Fire a beam owned by the caster. It lasts until its own duration/End().
-	protected fireBeam(ctx: AbilityContext, opts: BeamOptions): Beam {
+	public fireBeam(ctx: AbilityContext, opts: BeamOptions): Beam {
 		return fireBeam(ctx.caster, { ...opts, tags: ["ability", this.def.id, ...(opts.tags ?? [])] });
 	}
 
 	// Fire a beam that ends when this activation ends (channelled beams).
-	protected fireBeamWhileActive(ctx: ActiveContext, opts: BeamOptions): Beam {
+	public fireBeamWhileActive(ctx: ActiveContext, opts: BeamOptions): Beam {
 		const beam = this.fireBeam(ctx, opts);
 		const list = this.activeConnections.get(ctx.active) ?? [];
 		list.push({ Disconnect: () => beam.End("cancelled") });
@@ -179,17 +179,17 @@ export abstract class ability {
 	}
 
 	// Cosmetic effect for every client near `position`: handler.Effect(character, ...args).
-	protected broadcast(ctx: CharacterContext, position: Vector3, ...args: unknown[]) {
+	public broadcast(ctx: CharacterContext, position: Vector3, ...args: unknown[]) {
 		broadcast(position, undefined, "Ability", this.def.id, ctx.character, ...args);
 	}
 
 	// Cosmetic effect for the caster's client only.
-	protected tell(ctx: AbilityContext, ...args: unknown[]) {
+	public tell(ctx: AbilityContext, ...args: unknown[]) {
 		effectRemote.FireClient(ctx.player, "Ability", this.def.id, ctx.caster.GetCharacter(), ...args);
 	}
 
 	// Hit FX on the caster's screen for a landed ability hit.
-	protected confirmHit(ctx: AbilityContext, victim: Model, position: Vector3, crit: boolean) {
+	public confirmHit(ctx: AbilityContext, victim: Model, position: Vector3, crit: boolean) {
 		effectRemote.FireClient(ctx.player, "AbilityHit", victim, position, crit);
 	}
 
